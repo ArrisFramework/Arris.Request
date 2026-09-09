@@ -56,6 +56,22 @@ $name = Request::from('name')
 
 `apply()` принимает любой callable: замыкание, строку-функцию (`'strtolower'`), массив `[Class::class, 'method']` и т.д.
 
+Встроенные шорткаты для частых преобразований:
+
+```php
+// strip_tags — быстрая замена apply('strip_tags')
+$clean = Request::from('content')->stripTags()->asString();
+
+// substr — вырезать фрагмент. ВСЕГДА многобайтовый (mb_substr),
+// работает с символами языка, а не байтами
+$short = Request::from('name')
+    ->trim()
+    ->substr(1, 3)          // mb_substr($value, 1, 3)
+    ->asString();
+
+$rest = Request::from('name')->substr(2)->asString();  // до конца строки
+```
+
 ### Замыкающие методы (возвращают значение)
 
 | Метод                    | Тип      | Поведение                                                                              |
@@ -69,6 +85,7 @@ $name = Request::from('name')
 | `asArray()`              | `array`  | как есть, иначе `(array)$default`; пустой `[]` → default (если не `allowEmptyArray()`) |
 | `asEmail()`              | `string` | валидация `FILTER_VALIDATE_EMAIL`, иначе default                                       |
 | `asUrl()`                | `string` | валидация `FILTER_VALIDATE_URL`, иначе default                                         |
+| `asText()`               | `string` | очистка текста: `strip_tags` + `htmlspecialchars`, удаление пустых `<div>/<p>`, схлопывание пробелов |
 
 Примеры:
 
@@ -83,6 +100,15 @@ $tags = Request::from('tags')->default(['нет'])
 
 // Вложенные массивы возвращаются как есть
 $dishes = Request::from('dishes', $_POST)->asArray();
+
+// Санитизация текста (стриптит теги и экранирует спецсимволы)
+$text = Request::from('content')->asText();
+
+// С сохранением HTML (например, для WYSIWYG-редактора)
+$html = Request::from('content')->allowHtml()->asText();
+
+// Отключить удаление пустых <p>/<div>
+$raw = Request::from('content')->allowHtml()->noEmptyContent(false)->asText();
 ```
 
 ### __invoke-шорткат

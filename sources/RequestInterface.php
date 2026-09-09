@@ -23,11 +23,19 @@ interface RequestInterface
 
     public function allowEmptyArray(bool $allow = true): static;
 
+    public function allowHtml(bool $allow = true): static;
+
+    public function noEmptyContent(bool $allow = true): static;
+
     public function maxLength(int $length): static;
 
     public function default(mixed $default): static;
 
     public function apply(callable $callback): static;
+
+    public function stripTags(): static;
+
+    public function substr(int $start = 0, ?int $length = null): static;
 
     // ── terminal methods ──────────────────────────────────────────
 
@@ -50,4 +58,6 @@ interface RequestInterface
     public function asUrl(): string;
 
     public function asCheckbox(): int;
+
+    public function asText(): string;
 }

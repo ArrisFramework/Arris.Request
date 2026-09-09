@@ -30,6 +30,11 @@ class RequestTest extends TestCase
             'zero'       => '0',
             'no'         => 'no',
             'on'         => 'on',
+            'html'       => '<b>Hello</b> <i>world</i>',
+            'html_attr'  => '<a href="x" onclick="evil()">link</a>',
+            'void_html'  => '<p><br></p>',
+            'special'    => 'Tom & Jerry < 10',
+            'whitespace' => "  a\n   b\t c  ",
         ];
     }
 
@@ -265,6 +270,52 @@ class RequestTest extends TestCase
         $this->assertSame(0, Request::from('no', $this->data)->asCheckbox());
     }
 
+    // ── asText ────────────────────────────────────────────────────
+
+    #[Test]
+    public function asTextStripsTags(): void
+    {
+        $this->assertSame('Hello world', Request::from('html', $this->data)->asText());
+    }
+
+    #[Test]
+    public function asTextRemovesAttributesAndScripts(): void
+    {
+        $result = Request::from('html_attr', $this->data)->asText();
+        $this->assertSame('link', $result);
+        $this->assertStringNotContainsString('onclick', $result);
+    }
+
+    #[Test]
+    public function asTextEscapesSpecialChars(): void
+    {
+        $this->assertSame('Tom &amp; Jerry &lt; 10', Request::from('special', $this->data)->asText());
+    }
+
+    #[Test]
+    public function asTextKeepsHtmlWhenAllowed(): void
+    {
+        $this->assertSame('<b>Hello</b> <i>world</i>', Request::from('html', $this->data)->allowHtml()->asText());
+    }
+
+    #[Test]
+    public function asTextRemovesVoidContent(): void
+    {
+        $this->assertSame('', Request::from('void_html', $this->data)->asText());
+    }
+
+    #[Test]
+    public function asTextKeepsTagWhenHtmlAllowed(): void
+    {
+        $this->assertSame('<p><br></p>', Request::from('void_html', $this->data)->allowHtml()->noEmptyContent(false)->asText());
+    }
+
+    #[Test]
+    public function asTextCollapsesWhitespace(): void
+    {
+        $this->assertSame('a b c', Request::from('whitespace', $this->data)->asText());
+    }
+
     // ── raw ───────────────────────────────────────────────────────
 
     #[Test]
@@ -315,5 +366,44 @@ class RequestTest extends TestCase
             ->apply('strtolower')
             ->asString();
         $this->assertSame('alice', $result);
+    }
+
+    #[Test]
+    public function stripTagsStepRemovesMarkup(): void
+    {
+        $result = Request::from('html', $this->data)
+            ->stripTags()
+            ->asString();
+        $this->assertSame('Hello world', $result);
+    }
+
+    #[Test]
+    public function stripTagsStepComposesWithApply(): void
+    {
+        $result = Request::from('html', $this->data)
+            ->stripTags()
+            ->apply(fn($v) => strtoupper($v))
+            ->asString();
+        $this->assertSame('HELLO WORLD', $result);
+    }
+
+    #[Test]
+    public function substrStepSlicesString(): void
+    {
+        $result = Request::from('name', $this->data)
+            ->trim()
+            ->substr(1, 3)
+            ->asString();
+        $this->assertSame('lic', $result);
+    }
+
+    #[Test]
+    public function substrStepWithoutLengthSlicesToEnd(): void
+    {
+        $result = Request::from('name', $this->data)
+            ->trim()
+            ->substr(2)
+            ->asString();
+        $this->assertSame('ice', $result);
     }
 }

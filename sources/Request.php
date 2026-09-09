@@ -40,6 +40,10 @@ class Request implements RequestInterface
 
     private bool $allowEmptyArray = false;
 
+    private bool $allowHtml = false;
+
+    private bool $noEmptyContent = true;
+
     /** @var list<callable(mixed): mixed> */
     private array $steps = [];
 
@@ -105,6 +109,18 @@ class Request implements RequestInterface
         return $this;
     }
 
+    public function allowHtml(bool $allow = true): static
+    {
+        $this->allowHtml = $allow;
+        return $this;
+    }
+
+    public function noEmptyContent(bool $allow = true): static
+    {
+        $this->noEmptyContent = $allow;
+        return $this;
+    }
+
     /**
      * Append a transformation step. Runs in order of registration,
      * after trim/maxLength but before the terminal method.
@@ -112,6 +128,27 @@ class Request implements RequestInterface
     public function apply(callable $callback): static
     {
         $this->steps[] = $callback;
+        return $this;
+    }
+
+    /**
+     * Shorthand for apply('strip_tags'): strips HTML/PHP tags from string values.
+     */
+    public function stripTags(): static
+    {
+        $this->steps[] = 'strip_tags';
+        return $this;
+    }
+
+    /**
+     * Slice the string by CHARACTERS (always mb_substr, so multibyte-safe).
+     * Use before/after trim()/stripTags() as needed.
+     */
+    public function substr(int $start = 0, ?int $length = null): static
+    {
+        $this->steps[] = static function ($value) use ($start, $length): mixed {
+            return is_string($value) ? mb_substr($value, $start, $length, 'UTF-8') : $value;
+        };
         return $this;
     }
 
@@ -218,6 +255,40 @@ class Request implements RequestInterface
     public function asCheckbox(): int
     {
         return $this->asBool() ? 1 : 0;
+    }
+
+    /**
+     * Sanitized text: strips tags and escapes special chars unless allowHtml(),
+     * removes empty containers and collapses whitespace unless noEmptyContent(false).
+     */
+    public function asText(): string
+    {
+        $value = (string)$this->pipe();
+
+        if (!$this->allowHtml) {
+            $value = strip_tags($value);
+            $value = htmlspecialchars($value, ENT_QUOTES | ENT_HTML5, 'UTF-8');
+        }
+
+        if ($this->noEmptyContent) {
+            do {
+                $oldValue = $value;
+
+                $value = preg_replace('/<br\s*\/?>/i', '', $value);
+                $value = preg_replace('/<(div|p)[^>]*>\s*(?:<br\s*\/?>\s*)*\s*<\/\1>/i', '', $value);
+                $value = preg_replace('/<p[^>]*>\s*(?:&nbsp;\s*)+\s*<\/p>/i', '', $value);
+                $value = preg_replace('/<p[^>]*>[\s\x{00A0}]*<\/p>/iu', '', $value);
+            } while ($oldValue !== $value);
+
+            $value = preg_replace('/\s+/', ' ', $value);
+            $value = trim($value);
+
+            if ($value === '') {
+                return '';
+            }
+        }
+
+        return $value;
     }
 
     // ── internals ──────────────────────────────────────────────────
