@@ -4,6 +4,8 @@ declare(strict_types=1);
 
 namespace Arris;
 
+use Arris\Request\Dataset;
+
 /**
  * Fluent request data reader.
  *
@@ -14,7 +16,8 @@ namespace Arris;
  *   Request::str('name')                    — string from $_REQUEST
  *   Request::from('name')->asInt()          — int from $_REQUEST
  *   (new Request('name'))->asString()       — same
- *   Request('name')->asBool()               — __invoke shorthand
+ *   Request::import($_POST)->('name')->asBool()  — __invoke shorthand
+ *   Request::import($_POST)->asJson()       — whole source as JSON
  *
  * Chain example:
  *   Request::from('email', $data)
@@ -44,6 +47,8 @@ class Request implements RequestInterface
 
     private bool $noEmptyContent = true;
 
+    private bool $prepared_for_invoke = false;
+
     /** @var list<callable(mixed): mixed> */
     private array $steps = [];
 
@@ -62,6 +67,18 @@ class Request implements RequestInterface
     }
 
     /**
+     * Bind a source once (defaults to $_REQUEST), read many fields via __invoke.
+     * The returned "source reader" exposes the whole array through
+     * raw()/asArray()/asJson(): Request::import()->('field')->asString().
+     */
+    public static function import(?array $source = null): static
+    {
+        $reader = new static('', $source);
+        $reader->prepared_for_invoke = true;
+        return $reader;
+    }
+
+    /**
      * One-liner: Request::str('field') === Request::from('field')->asString().
      */
     public static function str(string $field, ?array $source = null): string
@@ -70,7 +87,7 @@ class Request implements RequestInterface
     }
 
     /**
-     * __invoke shorthand: Request('field')->asInt().
+     * __invoke shorthand, for example: Request('field')->asInt().
      */
     public function __invoke(string $field): static
     {
@@ -159,7 +176,7 @@ class Request implements RequestInterface
      */
     public function raw(): mixed
     {
-        return $this->source[$this->field] ?? $this->default;
+        return $this->prepared_for_invoke ? $this->source : ($this->source[$this->field] ?? $this->default);
     }
 
     public function asString(): string
@@ -213,6 +230,10 @@ class Request implements RequestInterface
 
     public function asArray(): array
     {
+        if ($this->prepared_for_invoke) {
+            return $this->source;
+        }
+
         $value = $this->pipe();
         if (!is_array($value)) {
             return (array)$this->default;
@@ -255,6 +276,15 @@ class Request implements RequestInterface
     public function asCheckbox(): int
     {
         return $this->asBool() ? 1 : 0;
+    }
+
+    /**
+     * JSON of the resolved value: whole source for import()-reader, piped field value otherwise.
+     * Delegates to Dataset::jsonize() for canonical flags (UNESCAPED_UNICODE, THROW_ON_ERROR).
+     */
+    public function asJson(): string
+    {
+        return Dataset::jsonize($this->prepared_for_invoke ? $this->source : $this->pipe());
     }
 
     /**

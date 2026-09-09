@@ -31,7 +31,11 @@ $email = Request::str('email');
 // Эквиваленты
 $age   = Request::from('age')->asInt();     // int из $_REQUEST
 $age   = (new Request('age'))->asInt();     // то же самое
-$active = Request('active')->asBool();      // __invoke-шорткат
+
+// __invoke-шорткат: сначала import() создаёт «пульт» (источник без поля),
+// затем $r('field') читает конкретное поле из того же источника
+$r      = Request::import($_POST);
+$active = $r('active')->asBool();
 ```
 
 Источником данных по умолчанию является `$_REQUEST`. Вторым аргументом можно
@@ -40,6 +44,26 @@ $active = Request('active')->asBool();      // __invoke-шорткат
 ```php
 $age = Request::from('age', ['age' => '42'])->asInt();  // 42
 ```
+
+### import() — «пульт» для __invoke
+
+`Request::import($source = null)` связывает источник (по умолчанию `$_REQUEST`) без
+конкретного поля и возвращает **source-reader**: его `raw()`, `asArray()` и `asJson()`
+отдают весь источник целиком. Каждый вызов `$r('field')` создаёт обычный читатель
+поля из того же источника:
+
+```php
+$r = Request::import($_POST);
+
+$quote = $r('tavern_chef_quote')->apply('strip_tags')->trim()->asStr();
+$name  = $r('name')->asString();
+
+$whole = $r->raw();            // весь $_POST (массив)
+$json  = $r->asJson();         // весь $_POST как JSON
+```
+
+Внимание: вызывать класс как функцию (`Request('name')`) нельзя — `__invoke`
+работает только на экземпляре.
 
 ### Чейнинг преобразований
 
@@ -74,24 +98,31 @@ $rest = Request::from('name')->substr(2)->asString();  // до конца стр
 
 ### Замыкающие методы (возвращают значение)
 
-| Метод                    | Тип      | Поведение                                                                              |
-|--------------------------|----------|----------------------------------------------------------------------------------------|
-| `raw()`                  | `mixed`  | сырое значение без преобразований                                                      |
-| `asString()` / `asStr()` | `string` | строковое приведение                                                                   |
-| `asInt()`                | `int`    | `FILTER_VALIDATE_INT`, иначе дефолт                                                    |
-| `asFloat()`              | `float`  | `FILTER_VALIDATE_FLOAT`, иначе дефолт                                                  |
-| `asBool()`               | `bool`   | `true/1/on/yes` → true; `false/0/off/no/''` → false                                    |
-| `asCheckbox()`           | `int`    | `asBool() ? 1 : 0` — для INT-колонки БД                                                |
-| `asArray()`              | `array`  | как есть, иначе `(array)$default`; пустой `[]` → default (если не `allowEmptyArray()`) |
-| `asEmail()`              | `string` | валидация `FILTER_VALIDATE_EMAIL`, иначе default                                       |
-| `asUrl()`                | `string` | валидация `FILTER_VALIDATE_URL`, иначе default                                         |
-| `asText()`               | `string` | очистка текста: `strip_tags` + `htmlspecialchars`, удаление пустых `<div>/<p>`, схлопывание пробелов |
+| Метод                    | Тип      | Поведение                                                                                                              |
+|--------------------------|----------|------------------------------------------------------------------------------------------------------------------------|
+| `raw()`                  | `mixed`  | сырое значение без преобразований; для `import()` — весь источник                                                      |
+| `asString()` / `asStr()` | `string` | строковое приведение                                                                                                   |
+| `asInt()`                | `int`    | `FILTER_VALIDATE_INT`, иначе дефолт                                                                                    |
+| `asFloat()`              | `float`  | `FILTER_VALIDATE_FLOAT`, иначе дефолт                                                                                  |
+| `asBool()`               | `bool`   | `true/1/on/yes` → true; `false/0/off/no/''` → false                                                                    |
+| `asCheckbox()`           | `int`    | `asBool() ? 1 : 0` — для INT-колонки БД                                                                                |
+| `asArray()`              | `array`  | как есть, иначе `(array)$default`; пустой `[]` → default (если не `allowEmptyArray()`); для `import()` — весь источник |
+| `asEmail()`              | `string` | валидация `FILTER_VALIDATE_EMAIL`, иначе default                                                                       |
+| `asUrl()`                | `string` | валидация `FILTER_VALIDATE_URL`, иначе default                                                                         |
+| `asText()`               | `string` | очистка текста: `strip_tags` + `htmlspecialchars`, удаление пустых `<div>/<p>`, схлопывание пробелов                   |
+| `asJson()`               | `string` | JSON результата (`Dataset::jsonize`): весь источник для `import()`                                                     |
 
 Примеры:
 
 ```php
 // Чекбокс в БД
 $active = Request::from('active')->asCheckbox();  // 0 или 1
+
+// Весь payload как JSON (логгирование, подпись вебхука, отладка)
+$json = Request::import($_POST)->asJson();
+
+// Значение поля как JSON (например, поле-массив)
+$tags = Request::from('tags', $_POST)->asJson();
 
 // Пустой массив из формы -> дефолт
 $tags = Request::from('tags')->default(['нет'])
@@ -101,7 +132,7 @@ $tags = Request::from('tags')->default(['нет'])
 // Вложенные массивы возвращаются как есть
 $dishes = Request::from('dishes', $_POST)->asArray();
 
-// Санитизация текста (стриптит теги и экранирует спецсимволы)
+// Санитизация текста (удаляет теги и экранирует спецсимволы)
 $text = Request::from('content')->asText();
 
 // С сохранением HTML (например, для WYSIWYG-редактора)
@@ -109,17 +140,6 @@ $html = Request::from('content')->allowHtml()->asText();
 
 // Отключить удаление пустых <p>/<div>
 $raw = Request::from('content')->allowHtml()->noEmptyContent(false)->asText();
-```
-
-### __invoke-шорткат
-
-Инстанс можно переиспользовать для чтения разных полей из одного источника:
-
-```php
-$r = Request::from('data', $input);
-$title  = $r('title')->trim()->asString();
-$price  = $r('price')->asFloat();
-$active = $r('active')->asCheckbox();
 ```
 
 ### Dataset — маппинг payload по правилам

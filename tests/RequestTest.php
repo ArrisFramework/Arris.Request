@@ -69,6 +69,48 @@ class RequestTest extends TestCase
         $this->assertSame(['php', 'arrイs'], $r2->asArray());
     }
 
+    #[Test]
+    public function importRawReturnsWholeSource(): void
+    {
+        $this->assertSame($this->data, Request::import($this->data)->raw());
+    }
+
+    #[Test]
+    public function importDefaultsToRequestSuperglobal(): void
+    {
+        $this->assertIsArray(Request::import()->raw());
+    }
+
+    #[Test]
+    public function importAsArrayReturnsWholeSource(): void
+    {
+        $this->assertSame($this->data, Request::import($this->data)->asArray());
+    }
+
+    #[Test]
+    public function importInvokeStillReadsSingleField(): void
+    {
+        $r = Request::import($this->data);
+        $this->assertSame('  Alice  ', $r('name')->raw());
+        $this->assertSame('42', $r('age')->asString());
+    }
+
+    #[Test]
+    public function importAsJsonReturnsSourceJson(): void
+    {
+        $expected = json_encode($this->data, JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION | JSON_INVALID_UTF8_SUBSTITUTE);
+        $this->assertSame($expected, Request::import($this->data)->asJson());
+    }
+
+    #[Test]
+    public function asJsonOnFieldReaderReturnsPipedValueJson(): void
+    {
+        $this->assertSame(
+            json_encode('Alice', JSON_UNESCAPED_UNICODE | JSON_PRESERVE_ZERO_FRACTION | JSON_INVALID_UTF8_SUBSTITUTE),
+            Request::from('name', $this->data)->trim()->asJson(),
+        );
+    }
+
     // ── asString / asStr ──────────────────────────────────────────
 
     #[Test]

@@ -11,6 +11,8 @@ interface RequestInterface
 {
     public static function from(string $field, ?array $source = null): static;
 
+    public static function import(?array $source = null): static;
+
     public static function str(string $field, ?array $source = null): string;
 
     public function __invoke(string $field): static;
@@ -58,6 +60,8 @@ interface RequestInterface
     public function asUrl(): string;
 
     public function asCheckbox(): int;
+
+    public function asJson(): string;
 
     public function asText(): string;
 }
